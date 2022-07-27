@@ -1,90 +1,85 @@
+use std::error::Error;
+use rand::Rng;
+
 pub struct Trie {
     children: [Option<Box<Trie>>; 26],
-    weight: u32,
+    size: usize,
+    sentinel: bool
 }
 
 impl Trie {
-
     pub fn create() -> Trie {
-        const INIT : Option<Box<Trie>> = None;
+        const INIT: Option<Box<Trie>> = None;
         return Trie {
             children: [INIT; 26],
-            weight: 0,
+            size: 0,
+            sentinel: false
+        };
+    }
+
+    fn to_index(b: char) -> Result<usize, ()> {
+        match b {
+            'a'..='z' => Ok(b as usize - (b'a' as usize)),
+            'A'..='Z' => Ok(b as usize - (b'A' as usize)),
+            _ => Err(())
         }
     }
 
-    pub fn insert(t: Box<Trie>, word: &str) {
-        if Self::lookup(&t, word) {
-            return;
-        }
-
-        let mut temp = &t;
-
-        // the horror
-        let mut it = word.as_bytes().iter().peekable();
-
-        while let Some(b) = it.next() {
-            temp.weight += 1;
-            temp = match &temp.children[*b as usize] {
-                None => {
-                    let new_node = Box::new(Self::create());
-                    temp.children[*b as usize] = Some(new_node);
-                    &new_node
-                },
-                Some(t) => t,
-            };
-
-            // Weights are very brittle in this implementation.
-            if it.peek().is_none() {
-                temp.weight += 1;
+    pub fn lookup(mut t: &Trie, word: &str) -> Result<bool, ()> {
+        for b in word.chars() {
+            match &t.children[Trie::to_index(b)?] {
+                Some(tt) => t = tt,
+                None => return Ok(false),
             }
         }
+        Ok(t.sentinel)
     }
 
-    pub fn lookup(t: &Box<Trie>, word: &str) -> bool {
-        let mut temp = t;
-        for b in word.as_bytes() {
-            if let Some(t) = temp.children[*b as usize] {
-                temp = &t;
-            } else {
-                return false;
-            }
+    pub fn insert(mut t: &mut Trie, word: &str) -> Result<bool, ()> {
+        if Trie::lookup(t, word)? {
+            return Ok(false);
         }
-        return true;
-    }
 
-    fn pick_child(t: &Trie) -> Option<usize> {
-        let rnd: f64 = (t.weight as f64) * rand::random::<f64>();
-        let mut sum: f64 = 0.0;
-        for i in 0..26 {
-            if let Some(t) = &t.children[i] {
-                sum += t.weight as f64;
-                if rnd < sum {return Some(i)};
-            }
+        for b in word.chars() {
+            t.size += 1;
+            t = t.children[Trie::to_index(b)?].get_or_insert_with(|| Box::new(Self::create()));
         }
-        return None;
+        t.size += 1;
+        t.sentinel = true;
+        Ok(true)
     }
 
-    fn pick_word(t: Trie, k: u32) -> Option<String> {
-        let mut word = String::new();
-        let mut temp = &t;
-        for _ in 1..k {
-            match Self::pick_child(temp) {
-                None => return None,
-                Some(index) => {
-                    word.push((index as u8) as char);
-                    if let Some(t) = &temp.children[index] {
-                        temp = t;
-                    } else {
-                        panic!("Child found during pick_child but not during pick_word.")
+    pub fn pick_nth(mut t: &Trie, mut nth : usize) -> Option<String> {
+        assert!(nth < t.size);
+        let mut res = String::new();
+        'outer: loop {
+            if nth == 0 && t.sentinel {
+                return Some(res);
+            }
+            for (i,tt) in t.children.iter().enumerate() {
+                match tt {
+                    None => {}
+                    Some (ttt) => {
+                        if nth < ttt.size {
+                            t = ttt;
+                            res.push((TryInto::<u8>::try_into(i).unwrap() + b'a') as char);
+                            continue 'outer;
+                        } else {
+                            nth -= ttt.size;
+                        }
                     }
                 }
-            }            
+            }
+            return None
         }
-        return Some(word);
     }
 
-    fn read_dict_from_file(filename : &str, k: u32) -> Option<Trie> {
+
+    pub fn pick_word(t: &Trie, k: u32) -> Option<String> {
+        Trie::pick_nth(t, rand::thread_rng().gen_range(0..t.size))
+    }
+
+    fn read_dict_from_file(filename: &str, k: u32) -> Option<Trie> {
         return None;
     }
 }
